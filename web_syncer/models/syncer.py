@@ -87,15 +87,14 @@ class Base(models.AbstractModel):
 
     @api.multi
     def _write(self, vals):
-        if is_module_installed(self.env, "web_syncer") and \
-                self._implements_syncer:
+        if is_module_installed(self.env, "web_syncer") and hasattr(self.env, 'syncer') and self._implements_syncer:
             for record in self:
                 self.env.syncer.update(record, vals)
         return super(Base, self)._write(vals)
 
     @api.multi
     def write(self, vals):
-        if not is_module_installed(self.env, "web_syncer"):
+        if not is_module_installed(self.env, "web_syncer") or not hasattr(self.env, 'syncer'):
             return super(Base, self).write(vals)
 
         # We always process m2x notifications
@@ -126,7 +125,7 @@ class Base(models.AbstractModel):
     @api.returns('self', lambda value: value.id)
     def create(self, vals):
         new = super(Base, self).create(vals)
-        if is_module_installed(self.env, 'web_syncer'):
+        if is_module_installed(self.env, 'web_syncer') and hasattr(self.env, 'syncer'):
             self.env.syncer.begin(self)
 
             if new._implements_syncer:
@@ -152,7 +151,7 @@ class Base(models.AbstractModel):
             return
 
         def is_fake_one2many(fn):
-            return self._fields[fn].type == 'integer' and fn == 'res_id'
+            return fn == 'res_id' and fn in self._fields and self._fields[fn].type == 'integer'
 
         def is_fake_one2many_for_model(model, rec):
             for field_name in ['res_model', 'model']:
@@ -167,7 +166,8 @@ class Base(models.AbstractModel):
             if x2m_field['type'] == 'one2many':
                 for rec in self:
                     for inverse_name in x2m_field['inverse_name']:
-
+                        if not inverse_name:
+                            continue
                         # Special case for fake one2many field
                         #  (i.e. ir.attachments)
                         if is_fake_one2many(inverse_name):
